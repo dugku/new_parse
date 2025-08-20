@@ -145,5 +145,15 @@ type playerStat struct {
 	OneVsFive          int
 }
 
+type BombStates struct {
+	Tick       int
+	secs       time.Duration
+	ClockTime  string
+	X, Y, Z    float64
+	SteamID    uint64
+	PlayerName string
+	BombSite   string
+}
+
 type PlayerState struct {
 }
