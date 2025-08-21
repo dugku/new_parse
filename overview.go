@@ -40,6 +40,8 @@ type RoundInformation struct {
 	TypeofBuyT       string // at freeze time end
 	ScoreCT          int
 	ScoreT           int
+	TimeRoundStart   time.Duration
+	TimeRoundEnd     time.Duration
 	FirstKillCount   int      `json:"-"` //need to think about trade kills later
 	SurvivorsA       []string `json:"-"`
 	SurvivorsB       []string `json:"-"`
@@ -58,34 +60,46 @@ type RoundInformation struct {
 	PlayersAliveB    map[uint64]bool `json:"-"`
 	OneVX            bool            `json:"-"`
 	OneVXCount       int             `json:"-"`
+	BombStuff        []BombStates
+	Damages          []PlayerDamages
 }
 
 type RoundKill struct {
-	TimeOfKill       time.Duration
-	Killer           string
-	IsOpening        bool
-	KillerId         uint64
-	VictId           uint64
-	Victim           string
-	Assistor         string
-	KillerTeamString string
-	VictimTeamString string
-	VictFlashDur     float32
-	VictDmgTaken     int
-	AttDmgTaken      int
-	IsHeadshot       bool
-	IsFlashed        bool
-	Dist             float64
-	KillerWeapon     int
-	KillerTeam       int
-	VictTeam         int
-	AttackerHealth   int
-	AttackerX        float64
-	AttackerY        float64
-	VictX            float64
-	VictY            float64
-	KillerClan       string
-	VictClan         string
+	TimeOfKill         int64 //During the Round
+	Tick               int
+	AttackerName       string
+	AttackerId         uint64
+	AttackerTeamString string
+	AttackerHealth     int
+	AttackerX          float64
+	AttackerY          float64
+	AttackerWeapon     int
+	AttackerTeam       int
+	AttackerClan       string
+	AttackerViewX      float32
+	AttackerViewY      float32
+	AttackerIsFlashed  bool
+	Assistor           string
+	VictimID           uint64
+	VictimName         string
+	VictimTeamString   string
+	VictFlashDur       float32
+	VictDmgTaken       int
+	AttDmgTaken        int
+	VictimFlashed      bool
+	VictTeam           int
+	VictimX            float64
+	VictimY            float64
+	VictimViewX        float32
+	VictimViewY        float32
+	VictClan           string
+	IsOpening          bool
+	IsHeadshot         bool
+	IsWallbang         bool
+	IsNoscope          bool
+	IsThroughSmoke     bool
+	IsAssistFlash      bool
+	Weapon             int
 }
 
 type playerStat struct {
@@ -147,12 +161,44 @@ type playerStat struct {
 
 type BombStates struct {
 	Tick       int
-	secs       time.Duration
-	ClockTime  string
+	Secs       int
 	X, Y, Z    float64
 	SteamID    uint64
 	PlayerName string
-	BombSite   string
+	BombSite   rune
+	EventType  string
+	HasKit     bool
+}
+
+type PlayerDamages struct {
+	Tick           int
+	Secs           int64
+	AttackerId     uint64
+	AttackerName   string
+	AttackerTeam   string
+	AttackerSide   int
+	AttackerPosX   float64
+	AttackerPosY   float64
+	AttackerViewX  float32
+	AttackerViewY  float32
+	AttackerMoving bool
+	AttckerHealth  int
+	VictimID       uint64
+	VictimName     string
+	VictimTeam     string
+	VictimSide     int
+	VictimPosX     float64
+	VictimPosY     float64
+	VictimViewX    float32
+	VictimViewY    float32
+	VictimHealth   int
+	Weapon         int
+	WeaponClass    string //placeholder
+	HPDmg          int
+	HPDmgTaken     int
+	HitGroup       int
+	ArmorDmg       int
+	ArmourDmgTaken int
 }
 
 type PlayerState struct {

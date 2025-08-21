@@ -2,7 +2,6 @@ package main
 
 import (
 	"log"
-	"time"
 
 	"github.com/markus-wa/demoinfocs-golang/v4/pkg/demoinfocs"
 	"github.com/markus-wa/demoinfocs-golang/v4/pkg/demoinfocs/common"
@@ -16,7 +15,10 @@ func state_control(p demoinfocs.Parser, pstate *parsingState, m *MatchInfo) {
 		pstate.round++
 
 		pstate.RoundOngoing = true
-		round := RoundInformation{}
+		round := RoundInformation{
+			BombStuff:      make([]BombStates, 0),
+			TimeRoundStart: p.CurrentTime(),
+		}
 
 		teamA := gs.Team(pstate.TeamASide)
 		teamB := gs.Team(pstate.TeamBSide)
@@ -199,6 +201,10 @@ func round_end_logic(p demoinfocs.Parser, m *MatchInfo, s *parsingState) {
 			3: "ct",
 		}
 
+		round_info := &m.Rounds[s.round-1]
+
+		round_info.TimeRoundEnd = p.CurrentTime()
+
 		players_a := gs.TeamCounterTerrorists().Members()
 		players_b := gs.TeamTerrorists().Members()
 
@@ -221,44 +227,47 @@ func is_tade(m *MatchInfo, s *parsingState) {
 			if key+1 < len(round_info.KillARound) {
 				next_val := round_info.KillARound[key+1]
 
-				if round_info.KillARound[key].Killer == next_val.Victim && ((next_val.TimeOfKill - round_info.KillARound[key].TimeOfKill) < (5 * time.Second)) {
-					trade_killer_id := next_val.KillerId
-					trade_vict_id := next_val.VictId
+				if round_info.KillARound[key].AttackerId == next_val.VictimID {
+					diffS := next_val.TimeOfKill - round_info.KillARound[key].TimeOfKill
+					if diffS >= 0 && diffS < 5 {
+						trade_killer_id := next_val.AttackerId
+						trade_vict_id := next_val.VictimID
 
-					player_kill, exists := m.Players[trade_killer_id]
-					if !exists {
-						return
+						player_kill, exists := m.Players[trade_killer_id]
+						if !exists {
+							return
+						}
+						player_kill.TradeKills++
+						player_kill.RoundContributed = append(player_kill.RoundContributed, s.round)
+						m.Players[trade_killer_id] = player_kill
+
+						player_vict, exists := m.Players[trade_vict_id]
+						if !exists {
+							return
+						}
+
+						player_vict.RoundTraded++
+						m.Players[trade_vict_id] = player_vict
 					}
-					player_kill.TradeKills++
-					player_kill.RoundContributed = append(player_kill.RoundContributed, s.round)
-					m.Players[trade_killer_id] = player_kill
-
-					player_vict, exists := m.Players[trade_vict_id]
-					if !exists {
-						return
-					}
-
-					player_vict.RoundTraded++
-					m.Players[trade_vict_id] = player_vict
 				}
 			}
 		}
 
 		for key, _ := range round_info.KillARound {
-			killer_id := round_info.KillARound[key].KillerId
+			killer_id := round_info.KillARound[key].AttackerId
 			player, exists := m.Players[killer_id]
 			if !exists {
 				return
 			}
 
-			if round_info.KillARound[key].Killer == round_info.KillARound[key].Victim {
+			if round_info.KillARound[key].AttackerName == round_info.KillARound[key].AttackerName {
 				continue
 			}
-			if round_info.KillARound[key].KillerTeam == 3 {
+			if round_info.KillARound[key].AttackerTeam == 3 {
 				player.CTkills++
 			}
 
-			if round_info.KillARound[key].KillerTeam == 2 {
+			if round_info.KillARound[key].AttackerTeam == 2 {
 				player.Tkills++
 			}
 			m.Players[killer_id] = player
@@ -356,7 +365,7 @@ func open_kill(m *MatchInfo, s *parsingState) {
 		round_info := &m.Rounds[s.round-1]
 
 		if round_info.KillARound[1].IsOpening {
-			killer_id := round_info.KillARound[1].KillerId
+			killer_id := round_info.KillARound[1].AttackerId
 			player, exists := m.Players[killer_id]
 			if !exists {
 				return
@@ -368,7 +377,7 @@ func open_kill(m *MatchInfo, s *parsingState) {
 		}
 
 		if round_info.KillARound[1].IsOpening {
-			victim_id := round_info.KillARound[1].VictId
+			victim_id := round_info.KillARound[1].VictimID
 			player, exists := m.Players[victim_id]
 			if !exists {
 				return
@@ -385,13 +394,13 @@ func open_kill_win(m *MatchInfo, s *parsingState, win map[int]string) {
 		round_info := &m.Rounds[s.round-1]
 
 		if round_info.KillARound[1].IsOpening {
-			killer_T := round_info.KillARound[1].KillerTeam
+			killer_T := round_info.KillARound[1].AttackerTeam
 			side_won := round_info.SideWon
 
 			val := win[killer_T]
 
 			if val == side_won {
-				kill_id := round_info.KillARound[1].KillerId
+				kill_id := round_info.KillARound[1].AttackerId
 				player, exists := m.Players[kill_id]
 				if !exists {
 					return
@@ -407,33 +416,300 @@ func open_kill_win(m *MatchInfo, s *parsingState, win map[int]string) {
 
 func bom_planted(p demoinfocs.Parser, m *MatchInfo, s *parsingState) {
 	p.RegisterEventHandler(func(e events.BombPlanted) {
-		//gs := p.GameState()
+		gs := p.GameState()
 
 		if m == nil || s == nil {
-			log.Println("This is whats wrong", m, s)
+			log.Printf("bomb_planted: nil state m=%v s=%v", m, s)
+			return
 		}
-
-		// Ensure s.round is within the valid range
-		if s.round <= 0 || s.round > len(m.Rounds) {
-			log.Println("Something within the round is wrong.")
-		}
-
-		// Check if e.Player is nil before accessing its fields
 		if e.Player == nil {
-			log.Println("Something with player is wrong ")
+			log.Printf("bomb_planted: nil planter at tick %d", p.GameState().IngameTick())
 			return
 		}
 
-		if s.round-1 >= len(m.Rounds) {
-			log.Printf("Something with the rounds is wrong: s.round=%d, len(m.Rounds)=%d", s.round, len(m.Rounds))
+		if len(m.Rounds) == 0 {
+			log.Printf("bomb_planted: no rounds exist at tick %d; ignoring", p.GameState().IngameTick())
 			return
 		}
 
-		round_info := &m.Rounds[s.round-1]
+		// Validate/repair s.round (1-based)
+		if s.round < 1 || s.round > len(m.Rounds) {
+			log.Printf("bomb_planted: s.round=%d out of [1,%d]; recovering to last",
+				s.round, len(m.Rounds))
+			s.round = len(m.Rounds)
+		}
+
+		idx := s.round - 1
+		round_info := &m.Rounds[idx]
+
+		sites := map[int]rune{
+			65: 'A',
+			66: 'B',
+		}
+
+		var b BombStates
 
 		round_info.BombPlanted = true
 		round_info.PlayerPlanted = e.Player.Name
 		round_info.BombPlantedSite = string(e.Site)
+
+		b.Tick = gs.IngameTick()
+		diff := p.CurrentTime() - round_info.TimeRoundStart
+		b.Secs = int(diff.Seconds())
+		b.X = e.Player.Position().X
+		b.Y = e.Player.Position().Y
+		b.Z = e.Player.Position().Z
+		b.SteamID = e.Player.SteamID64
+		b.PlayerName = e.Player.Name
+
+		site := sites[int(e.Site)]
+
+		b.BombSite = site
+		b.EventType = "BombPlanted"
+
+		round_info.BombStuff = append(round_info.BombStuff, b)
+
+	})
+}
+
+func bomb_plantBegin(p demoinfocs.Parser, m *MatchInfo, s *parsingState) {
+	p.RegisterEventHandler(func(e events.BombPlantBegin) {
+		gs := p.GameState()
+
+		if m == nil || s == nil {
+			log.Printf("bomb_planted: nil state m=%v s=%v", m, s)
+			return
+		}
+		if e.Player == nil {
+			log.Printf("bomb_planted: nil planter at tick %d", p.GameState().IngameTick())
+			return
+		}
+
+		if len(m.Rounds) == 0 {
+			log.Printf("bomb_planted: no rounds exist at tick %d; ignoring", p.GameState().IngameTick())
+			return
+		}
+
+		// Validate/repair s.round (1-based)
+		if s.round < 1 || s.round > len(m.Rounds) {
+			log.Printf("bomb_planted: s.round=%d out of [1,%d]; recovering to last",
+				s.round, len(m.Rounds))
+			s.round = len(m.Rounds)
+		}
+
+		idx := s.round - 1
+		round_info := &m.Rounds[idx]
+
+		sites := map[int]rune{
+			65: 'A',
+			66: 'B',
+		}
+
+		var b BombStates
+
+		b.Tick = gs.IngameTick()
+		diff := p.CurrentTime() - round_info.TimeRoundStart
+		b.Secs = int(diff.Seconds())
+		b.X = e.Player.Position().X
+		b.Y = e.Player.Position().Y
+		b.Z = e.Player.Position().Z
+		b.SteamID = e.Player.SteamID64
+		b.PlayerName = e.Player.Name
+
+		site := sites[int(e.Site)]
+
+		b.BombSite = site
+		b.EventType = "BombPlantBegin"
+
+		round_info.BombStuff = append(round_info.BombStuff, b)
+	})
+}
+
+func bomb_plantAbort(p demoinfocs.Parser, m *MatchInfo, s *parsingState) {
+	p.RegisterEventHandler(func(e events.BombPlantAborted) {
+		gs := p.GameState()
+
+		if m == nil || s == nil {
+			log.Printf("bomb_planted: nil state m=%v s=%v", m, s)
+			return
+		}
+		if e.Player == nil {
+			log.Printf("bomb_planted: nil planter at tick %d", p.GameState().IngameTick())
+			return
+		}
+
+		if len(m.Rounds) == 0 {
+			log.Printf("bomb_planted: no rounds exist at tick %d; ignoring", p.GameState().IngameTick())
+			return
+		}
+
+		// Validate/repair s.round (1-based)
+		if s.round < 1 || s.round > len(m.Rounds) {
+			log.Printf("bomb_planted: s.round=%d out of [1,%d]; recovering to last",
+				s.round, len(m.Rounds))
+			s.round = len(m.Rounds)
+		}
+
+		idx := s.round - 1
+		round_info := &m.Rounds[idx]
+
+		var b BombStates
+
+		b.Tick = gs.IngameTick()
+		diff := p.CurrentTime() - round_info.TimeRoundStart
+		b.Secs = int(diff.Seconds())
+		b.X = e.Player.Position().X
+		b.Y = e.Player.Position().Y
+		b.Z = e.Player.Position().Z
+		b.SteamID = e.Player.SteamID64
+		b.PlayerName = e.Player.Name
+
+		b.EventType = "BombPlantAbort"
+
+		round_info.BombStuff = append(round_info.BombStuff, b)
+	})
+}
+
+func bomb_defuseStart(p demoinfocs.Parser, m *MatchInfo, s *parsingState) {
+	p.RegisterEventHandler(func(e events.BombDefuseStart) {
+		gs := p.GameState()
+
+		if m == nil || s == nil {
+			log.Printf("bomb_planted: nil state m=%v s=%v", m, s)
+			return
+		}
+		if e.Player == nil {
+			log.Printf("bomb_planted: nil planter at tick %d", p.GameState().IngameTick())
+			return
+		}
+
+		if len(m.Rounds) == 0 {
+			log.Printf("bomb_planted: no rounds exist at tick %d; ignoring", p.GameState().IngameTick())
+			return
+		}
+
+		// Validate/repair s.round (1-based)
+		if s.round < 1 || s.round > len(m.Rounds) {
+			log.Printf("bomb_planted: s.round=%d out of [1,%d]; recovering to last",
+				s.round, len(m.Rounds))
+			s.round = len(m.Rounds)
+		}
+
+		idx := s.round - 1
+		round_info := &m.Rounds[idx]
+
+		var b BombStates
+
+		b.Tick = gs.IngameTick()
+		diff := p.CurrentTime() - round_info.TimeRoundStart
+		b.Secs = int(diff.Seconds())
+		b.X = e.Player.Position().X
+		b.Y = e.Player.Position().Y
+		b.Z = e.Player.Position().Z
+		b.SteamID = e.Player.SteamID64
+		b.PlayerName = e.Player.Name
+		b.HasKit = e.HasKit
+		b.EventType = "BombDefuseStart"
+
+		round_info.BombStuff = append(round_info.BombStuff, b)
+	})
+}
+
+func bomb_defuseAborted(p demoinfocs.Parser, m *MatchInfo, s *parsingState) {
+	p.RegisterEventHandler(func(e events.BombDefuseAborted) {
+		gs := p.GameState()
+
+		if m == nil || s == nil {
+			log.Printf("bomb_planted: nil state m=%v s=%v", m, s)
+			return
+		}
+		if e.Player == nil {
+			log.Printf("bomb_planted: nil planter at tick %d", p.GameState().IngameTick())
+			return
+		}
+
+		if len(m.Rounds) == 0 {
+			log.Printf("bomb_planted: no rounds exist at tick %d; ignoring", p.GameState().IngameTick())
+			return
+		}
+
+		// Validate/repair s.round (1-based)
+		if s.round < 1 || s.round > len(m.Rounds) {
+			log.Printf("bomb_planted: s.round=%d out of [1,%d]; recovering to last",
+				s.round, len(m.Rounds))
+			s.round = len(m.Rounds)
+		}
+
+		idx := s.round - 1
+		round_info := &m.Rounds[idx]
+
+		var b BombStates
+
+		b.Tick = gs.IngameTick()
+		diff := p.CurrentTime() - round_info.TimeRoundStart
+		b.Secs = int(diff.Seconds())
+		b.X = e.Player.Position().X
+		b.Y = e.Player.Position().Y
+		b.Z = e.Player.Position().Z
+		b.SteamID = e.Player.SteamID64
+		b.PlayerName = e.Player.Name
+		b.EventType = "BombDefuseAborted"
+
+		round_info.BombStuff = append(round_info.BombStuff, b)
+	})
+}
+
+func bomb_defused(p demoinfocs.Parser, m *MatchInfo, s *parsingState) {
+	p.RegisterEventHandler(func(e events.BombDefused) {
+		gs := p.GameState()
+
+		if m == nil || s == nil {
+			log.Printf("bomb_planted: nil state m=%v s=%v", m, s)
+			return
+		}
+		if e.Player == nil {
+			log.Printf("bomb_planted: nil planter at tick %d", p.GameState().IngameTick())
+			return
+		}
+
+		if len(m.Rounds) == 0 {
+			log.Printf("bomb_planted: no rounds exist at tick %d; ignoring", p.GameState().IngameTick())
+			return
+		}
+
+		// Validate/repair s.round (1-based)
+		if s.round < 1 || s.round > len(m.Rounds) {
+			log.Printf("bomb_planted: s.round=%d out of [1,%d]; recovering to last",
+				s.round, len(m.Rounds))
+			s.round = len(m.Rounds)
+		}
+
+		idx := s.round - 1
+		round_info := &m.Rounds[idx]
+
+		sites := map[int]rune{
+			65: 'A',
+			66: 'B',
+		}
+
+		var b BombStates
+
+		b.Tick = gs.IngameTick()
+		diff := p.CurrentTime() - round_info.TimeRoundStart
+		b.Secs = int(diff.Seconds())
+		b.X = e.Player.Position().X
+		b.Y = e.Player.Position().Y
+		b.Z = e.Player.Position().Z
+		b.SteamID = e.Player.SteamID64
+		b.PlayerName = e.Player.Name
+
+		site := sites[int(e.Site)]
+
+		b.HasKit = e.Player.HasDefuseKit()
+		b.BombSite = site
+		b.EventType = "BombDefused"
+
+		round_info.BombStuff = append(round_info.BombStuff, b)
 	})
 }
 

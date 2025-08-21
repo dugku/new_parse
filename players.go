@@ -1,10 +1,12 @@
 package main
 
 import (
+	"log"
+	"time"
+
 	"github.com/markus-wa/demoinfocs-golang/v4/pkg/demoinfocs"
 	"github.com/markus-wa/demoinfocs-golang/v4/pkg/demoinfocs/common"
 	"github.com/markus-wa/demoinfocs-golang/v4/pkg/demoinfocs/events"
-	"log"
 )
 
 var (
@@ -148,6 +150,7 @@ func print_this(c []*common.Player) {
 func kill_handler(p demoinfocs.Parser, m *MatchInfo, s *parsingState) {
 	p.RegisterEventHandler(func(e events.Kill) {
 		gs := p.GameState()
+		round_info := &m.Rounds[s.round-1]
 		if e.Killer == nil || e.Victim == nil {
 			return
 		}
@@ -184,26 +187,38 @@ func kill_handler(p demoinfocs.Parser, m *MatchInfo, s *parsingState) {
 			if _, exists := m.Rounds[s.round-1].KillARound[count]; exists {
 				return
 			} else {
+				delta := p.CurrentTime() - round_info.TimeRoundStart
 				m.Rounds[s.round-1].KillARound[count] = RoundKill{
-					TimeOfKill:     p.CurrentTime(),
-					Killer:         e.Killer.Name,
-					Victim:         e.Victim.Name,
-					IsOpening:      open_kill,
-					KillerId:       e.Killer.SteamID64,
-					VictId:         e.Victim.SteamID64,
-					Assistor:       assistor,
-					AttackerHealth: e.Killer.Health(),
-					IsHeadshot:     e.IsHeadshot,
-					IsFlashed:      e.Victim.IsBlinded(),
-					VictFlashDur:   e.Victim.FlashDuration,
-					KillerTeam:     int(e.Killer.TeamState.Team()),
-					VictTeam:       int(e.Victim.TeamState.Team()),
-					AttackerX:      e.Killer.Position().X,
-					AttackerY:      e.Killer.Position().Y,
-					VictX:          e.Victim.Position().X,
-					VictY:          e.Victim.Position().Y,
-					KillerClan:     gs.Team(e.Killer.TeamState.Team()).ClanName(),
-					VictClan:       gs.Team(e.Victim.TeamState.Team()).ClanName(),
+					Tick:              p.GameState().IngameTick(),
+					TimeOfKill:        int64(delta / time.Second),
+					AttackerName:      e.Killer.Name,
+					AttackerId:        e.Killer.SteamID64,
+					AttackerHealth:    e.Killer.Health(),
+					AttackerTeam:      int(e.Killer.TeamState.Team()),
+					AttackerX:         e.Killer.Position().X,
+					AttackerY:         e.Killer.Position().Y,
+					AttackerClan:      gs.Team(e.Killer.TeamState.Team()).ClanName(),
+					AttackerViewX:     e.Killer.ViewDirectionX(),
+					AttackerViewY:     e.Killer.ViewDirectionY(),
+					AttackerIsFlashed: e.Killer.IsBlinded(),
+					Assistor:          assistor,
+					VictimName:        e.Victim.Name,
+					VictimID:          e.Victim.SteamID64,
+					VictimFlashed:     e.Victim.IsBlinded(),
+					VictFlashDur:      e.Victim.FlashDuration,
+					VictTeam:          int(e.Victim.TeamState.Team()),
+					VictimX:           e.Victim.Position().X,
+					VictimY:           e.Victim.Position().Y,
+					VictimViewX:       e.Victim.ViewDirectionX(),
+					VictimViewY:       e.Victim.ViewDirectionY(),
+					VictClan:          gs.Team(e.Victim.TeamState.Team()).ClanName(),
+					IsHeadshot:        e.IsHeadshot,
+					IsOpening:         open_kill,
+					IsWallbang:        e.IsWallBang(),
+					IsNoscope:         e.NoScope,
+					IsThroughSmoke:    e.ThroughSmoke,
+					IsAssistFlash:     e.AssistedFlash,
+					Weapon:            int(e.Killer.ActiveWeapon().Type),
 				}
 				//count++
 			}
@@ -357,4 +372,46 @@ func update_weapon_kill(c *common.Player, weapon_type common.EquipmentType, m *M
 
 	player.WeaponKill[int(weapon_type)]++
 	m.Players[player_id] = player
+}
+
+func players_hurt(p demoinfocs.Parser, m *MatchInfo, s *parsingState) {
+	p.RegisterEventHandler(func(e events.PlayerHurt) {
+		if e.Attacker == nil || e.Player == nil {
+			return
+		}
+		gs := p.GameState()
+		round_info := &m.Rounds[s.round-1]
+
+		var dmg PlayerDamages
+
+		dmg.Tick = gs.IngameTick()
+		dmg.Secs = int64(p.CurrentTime() - round_info.TimeRoundStart)
+		dmg.AttackerId = e.Attacker.SteamID64
+		dmg.AttackerName = e.Attacker.Name
+		dmg.AttackerTeam = e.Attacker.ClanTag()
+		dmg.AttackerSide = int(e.Attacker.Team)
+		dmg.AttackerPosX = e.Attacker.Position().X
+		dmg.AttackerPosY = e.Attacker.Position().Y
+		dmg.AttackerViewX = e.Attacker.ViewDirectionX()
+		dmg.AttackerViewY = e.Attacker.ViewDirectionY()
+		dmg.AttckerHealth = e.Attacker.Health()
+		dmg.VictimID = e.Player.SteamID64
+		dmg.VictimName = e.Player.Name
+		dmg.VictimTeam = e.Player.TeamState.ClanName()
+		dmg.VictimSide = int(e.Player.TeamState.Team())
+		dmg.VictimPosX = e.Player.Position().X
+		dmg.VictimPosY = e.Player.Position().Y
+		dmg.VictimViewX = e.Player.ViewDirectionX()
+		dmg.VictimViewY = e.Player.ViewDirectionY()
+		dmg.VictimHealth = e.Player.Health()
+		dmg.Weapon = int(e.Weapon.Type)
+		dmg.WeaponClass = e.WeaponString
+		dmg.HPDmg = e.HealthDamage
+		dmg.HPDmgTaken = e.HealthDamageTaken
+		dmg.ArmorDmg = e.ArmorDamage
+		dmg.ArmourDmgTaken = e.ArmorDamageTaken
+		dmg.HitGroup = int(e.HitGroup)
+
+		round_info.Damages = append(round_info.Damages, dmg)
+	})
 }

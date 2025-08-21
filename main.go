@@ -102,7 +102,7 @@ func start_parsing(path string, m *MatchInfo, s *parsingState) error {
 		fmt.Println(msg.MapName)
 
 	})
-	fmt.Println(mapMetadata.PosX)
+	fmt.Println(p.TickRate())
 	state_control(p, s, m)
 	match_started(p, m, s)
 	team_switch(p, m, s)
@@ -115,6 +115,12 @@ func start_parsing(path string, m *MatchInfo, s *parsingState) error {
 	nade_dmg(p, m, s)
 	round_econ_logic(p, m, s)
 	bom_planted(p, m, s)
+	bomb_plantBegin(p, m, s)
+	bomb_plantAbort(p, m, s)
+	bomb_defuseStart(p, m, s)
+	bomb_defuseAborted(p, m, s)
+	bomb_defused(p, m, s)
+	players_hurt(p, m, s)
 	//open_kill(m, s)
 	// Parse to end
 	err = p.ParseToEnd()
