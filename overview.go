@@ -13,6 +13,7 @@ type parsingState struct {
 	TeamASide    common.Team
 	TeamBSide    common.Team
 	WarmupKills  []events.Kill
+	SeenNadeIDs  map[int]struct{}
 }
 
 type MatchInfo struct {
@@ -40,19 +41,19 @@ type RoundInformation struct {
 	TypeofBuyT       string // at freeze time end
 	ScoreCT          int
 	ScoreT           int
-	TimeRoundStart   time.Duration
-	TimeRoundEnd     time.Duration
-	FirstKillCount   int      `json:"-"` //need to think about trade kills later
-	SurvivorsA       []string `json:"-"`
-	SurvivorsB       []string `json:"-"`
-	SurvivorsAInt    int      //number of Survivors at the end of the round
-	SurvivorsBInt    int      //number of Survivors at the end of the round
-	BombPlanted      bool     // was bomb planted at some point in the round?
+	TimeRoundStart   time.Duration `json:"-"`
+	TimeRoundEnd     time.Duration `json:"-"`
+	FirstKillCount   int           `json:"-"` //need to think about trade kills later
+	SurvivorsA       []string      `json:"-"`
+	SurvivorsB       []string      `json:"-"`
+	SurvivorsAInt    int           `json:"-"` //number of Survivors at the end of the round
+	SurvivorsBInt    int           `json:"-"` //number of Survivors at the end of the round
+	BombPlanted      bool          // was bomb planted at some point in the round?
 	PlayerPlanted    string
 	RoundEndedReason string
-	SideWon          string
-	RoundClanWinner  string
-	RoundClanLoser   string
+	SideWon          string `json:"-"`
+	RoundClanWinner  string `json:"-"`
+	RoundClanLoser   string `json:"-"`
 	KillARound       map[int]RoundKill
 	BombPlantedSite  string
 	Duration         time.Duration
@@ -62,6 +63,9 @@ type RoundInformation struct {
 	OneVXCount       int             `json:"-"`
 	BombStuff        []BombStates
 	Damages          []PlayerDamages
+	ShotsFired       []PlayerFired
+	NadeStarts       []NadeEventStart
+	NadeEnds         []NadeEventEnd
 }
 
 type RoundKill struct {
@@ -201,5 +205,51 @@ type PlayerDamages struct {
 	ArmourDmgTaken int
 }
 
+type PlayerFired struct {
+	Tick          int
+	Secs          int64
+	PlayerSteamID uint64
+	PlayerName    string
+	PlayerTeam    string
+	PlayerSide    int
+	PlayerPosX    float64
+	PlayerPosY    float64
+	PlayerViewX   float32
+	PlayerViewY   float32
+	Weapon        int
+	WeaponClass   string
+	AmmoInMag     int
+	AmmoInReserve int
+}
+
+type NadeEventStart struct {
+	Tick        int
+	EntityId    int
+	Secs        int64
+	NadeType    int
+	NadePosX    float64
+	NadePosY    float64
+	ThrowerID   uint64
+	ThrowerName string
+	ThrowerPosX float64
+	ThrowerPosY float64
+	ThrowerSide int
+	ThrowerTeam string
+}
+
+type NadeEventEnd struct {
+	DestroyTick int
+	DestroySecs int64
+	EntityId    int
+	NadeType    int
+	NadePosX    float64
+	NadePosY    float64
+	ThrowerID   uint64
+	ThrowerName string
+	ThrowerPosX float64
+	ThrowerPosY float64
+	ThrowerSide int
+	ThrowerTeam string
+}
 type PlayerState struct {
 }

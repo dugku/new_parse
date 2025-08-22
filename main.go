@@ -46,24 +46,24 @@ func main() {
 
 		get_match_winner(&match)
 		fmt.Println(path)
-		temp := strings.Split(path, string(filepath.Separator))[4]
-		fmt.Println(temp)
-		temp3 := strings.Split(temp, "_")
+		//temp := strings.Split(path, string(filepath.Separator))[4]
+		//fmt.Println(temp)
+		//temp3 := strings.Split(temp, "_")
 
-		match_id_thing := strings.Split(temp3[0], "-")[0]
+		//match_id_thing := strings.Split(temp3[0], "-")[0]
 
-		team_one := strings.Split(temp3[0], "-")[2]
-		team_two := strings.Split(temp3[0], "-")[3]
+		//team_one := strings.Split(temp3[0], "-")[2]
+		//team_two := strings.Split(temp3[0], "-")[3]
+		//
+		//date := strings.Split(path, string(os.PathSeparator))[1]
+		//
+		//match.MatchId = match_id_thing
+		//match.TeamOneId = team_one
+		//match.TeamTwoId = team_two
+		//match.Date = date
 
-		date := strings.Split(path, string(os.PathSeparator))[1]
-
-		match.MatchId = match_id_thing
-		match.TeamOneId = team_one
-		match.TeamTwoId = team_two
-		match.Date = date
-
-		output_file_n := fmt.Sprintf("%s-%s-%d.json", match.MatchId, date, count)
-		targetDir := `/mnt/c/Users/Mike/Desktop/Parse/json_matches`
+		output_file_n := fmt.Sprintf("new.json")
+		targetDir := `/mnt/c/Users/micha/gitDirs/new_parse/json`
 
 		// Ensure the directory is created (won’t fail if it already exists)
 		if err := os.MkdirAll(targetDir, 0755); err != nil {
@@ -121,7 +121,9 @@ func start_parsing(path string, m *MatchInfo, s *parsingState) error {
 	bomb_defuseAborted(p, m, s)
 	bomb_defused(p, m, s)
 	players_hurt(p, m, s)
-	//open_kill(m, s)
+	player_fired(p, m, s)
+	nades(p, m, s)
+	open_kill(m, s)
 	// Parse to end
 	err = p.ParseToEnd()
 	if err != nil {
@@ -141,7 +143,7 @@ func deleteElement(slice []string, index int) []string {
 
 func get_files() []string {
 	filepaths := make([]string, 0)
-	path := `/mnt/d`
+	path := `/mnt/c/Users/micha/gitDirs/new_parse/dems`
 
 	err := filepath.WalkDir(path, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {

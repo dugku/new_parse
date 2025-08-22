@@ -385,7 +385,7 @@ func players_hurt(p demoinfocs.Parser, m *MatchInfo, s *parsingState) {
 		var dmg PlayerDamages
 
 		dmg.Tick = gs.IngameTick()
-		dmg.Secs = int64(p.CurrentTime() - round_info.TimeRoundStart)
+		dmg.Secs = int64((p.CurrentTime() - round_info.TimeRoundStart) / time.Second)
 		dmg.AttackerId = e.Attacker.SteamID64
 		dmg.AttackerName = e.Attacker.Name
 		dmg.AttackerTeam = e.Attacker.ClanTag()
@@ -413,5 +413,34 @@ func players_hurt(p demoinfocs.Parser, m *MatchInfo, s *parsingState) {
 		dmg.HitGroup = int(e.HitGroup)
 
 		round_info.Damages = append(round_info.Damages, dmg)
+	})
+}
+
+func player_fired(p demoinfocs.Parser, m *MatchInfo, s *parsingState) {
+	p.RegisterEventHandler(func(e events.WeaponFire) {
+		if e.Shooter == nil {
+			return
+		}
+
+		round_info := &m.Rounds[s.round-1]
+		gs := p.GameState()
+
+		var f PlayerFired
+
+		f.Tick = gs.IngameTick()
+		f.Secs = int64((p.CurrentTime() - round_info.TimeRoundStart) / time.Second)
+		f.PlayerSteamID = e.Shooter.SteamID64
+		f.PlayerName = e.Shooter.Name
+		f.PlayerTeam = e.Shooter.TeamState.ClanName()
+		f.PlayerSide = int(e.Shooter.Team)
+		f.PlayerPosX = e.Shooter.Position().X
+		f.PlayerPosY = e.Shooter.Position().Y
+		f.PlayerViewX = e.Shooter.ViewDirectionX()
+		f.PlayerViewY = e.Shooter.ViewDirectionY()
+		f.Weapon = int(e.Weapon.Type)
+		f.AmmoInMag = e.Weapon.AmmoInMagazine()
+		f.AmmoInReserve = e.Weapon.AmmoReserve()
+
+		round_info.ShotsFired = append(round_info.ShotsFired, f)
 	})
 }
