@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"time"
 
@@ -157,6 +158,7 @@ func kill_handler(p demoinfocs.Parser, m *MatchInfo, s *parsingState) {
 
 		if p.GameState().IsWarmupPeriod() {
 			s.WarmupKills = append(s.WarmupKills, e)
+			return
 		}
 
 		if e.IsHeadshot && e.Weapon != nil {
@@ -346,15 +348,14 @@ func kill_handler(p demoinfocs.Parser, m *MatchInfo, s *parsingState) {
 		}
 	})
 }
-
 func add_headshot(c *common.Player, w common.EquipmentType, m *MatchInfo) {
 	player_id := c.SteamID64
 	player, exists := m.Players[player_id]
 	if !exists {
 		return
 	}
-
 	player.HS++
+	fmt.Println(player.HS, player.UserName, player.Kills)
 	player.WeaponKillHS[int(w)]++
 	m.Players[player_id] = player
 }
@@ -376,71 +377,165 @@ func update_weapon_kill(c *common.Player, weapon_type common.EquipmentType, m *M
 
 func players_hurt(p demoinfocs.Parser, m *MatchInfo, s *parsingState) {
 	p.RegisterEventHandler(func(e events.PlayerHurt) {
-		if e.Attacker == nil || e.Player == nil {
+		// Safety net: never let a single bad event kill the whole parse
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("recovered in PlayerHurt handler: %v", r)
+			}
+		}()
+
+		gs := p.GameState()
+
+		// Skip warmup completely to avoid contaminating stats
+		if gs.IsWarmupPeriod() {
 			return
 		}
-		gs := p.GameState()
-		round_info := &m.Rounds[s.round-1]
+
+		// Victim is required for a meaningful PlayerHurt
+		if e.Player == nil {
+			log.Printf("PlayerHurt with nil victim @tick=%d; skipping", gs.IngameTick())
+			return
+		}
+
+		// Validate round bounds BEFORE indexing
+		if s.round <= 0 || s.round > len(m.Rounds) {
+			return
+		}
+		round := &m.Rounds[s.round-1]
 
 		var dmg PlayerDamages
-
 		dmg.Tick = gs.IngameTick()
-		dmg.Secs = int64((p.CurrentTime() - round_info.TimeRoundStart) / time.Second)
-		dmg.AttackerId = e.Attacker.SteamID64
-		dmg.AttackerName = e.Attacker.Name
-		dmg.AttackerTeam = e.Attacker.ClanTag()
-		dmg.AttackerSide = int(e.Attacker.Team)
-		dmg.AttackerPosX = e.Attacker.Position().X
-		dmg.AttackerPosY = e.Attacker.Position().Y
-		dmg.AttackerViewX = e.Attacker.ViewDirectionX()
-		dmg.AttackerViewY = e.Attacker.ViewDirectionY()
-		dmg.AttckerHealth = e.Attacker.Health()
-		dmg.VictimID = e.Player.SteamID64
-		dmg.VictimName = e.Player.Name
-		dmg.VictimTeam = e.Player.TeamState.ClanName()
-		dmg.VictimSide = int(e.Player.TeamState.Team())
-		dmg.VictimPosX = e.Player.Position().X
-		dmg.VictimPosY = e.Player.Position().Y
-		dmg.VictimViewX = e.Player.ViewDirectionX()
-		dmg.VictimViewY = e.Player.ViewDirectionY()
-		dmg.VictimHealth = e.Player.Health()
-		dmg.Weapon = int(e.Weapon.Type)
-		dmg.WeaponClass = e.WeaponString
+		dmg.Secs = int64((p.CurrentTime() - round.TimeRoundStart) / time.Second)
+
+		if a := e.Attacker; a != nil {
+			dmg.AttackerId = a.SteamID64
+			dmg.AttackerName = a.Name
+			dmg.AttackerTeam = a.ClanTag()
+			dmg.AttackerSide = int(a.Team)
+			apos := a.Position()
+			dmg.AttackerPosX = apos.X
+			dmg.AttackerPosY = apos.Y
+			dmg.AttackerViewX = a.ViewDirectionX()
+			dmg.AttackerViewY = a.ViewDirectionY()
+			dmg.AttckerHealth = a.Health()
+		} else {
+			// World / env damage or unknown attacker
+			dmg.AttackerId = 0
+			dmg.AttackerName = "world"
+			dmg.AttackerTeam = ""
+			dmg.AttackerSide = int(common.TeamUnassigned)
+			dmg.AttckerHealth = 0
+		}
+
+		v := e.Player
+		dmg.VictimID = v.SteamID64
+		dmg.VictimName = v.Name
+		dmg.VictimTeam = v.ClanTag()
+		dmg.VictimSide = int(v.Team) // avoid TeamState
+		vpos := v.Position()
+		dmg.VictimPosX = vpos.X
+		dmg.VictimPosY = vpos.Y
+		dmg.VictimViewX = v.ViewDirectionX()
+		dmg.VictimViewY = v.ViewDirectionY()
+		dmg.VictimHealth = v.Health()
+
+		if e.Weapon != nil {
+			dmg.Weapon = int(e.Weapon.Type)
+			if e.WeaponString != "" {
+				dmg.WeaponClass = e.WeaponString
+			} else {
+				dmg.WeaponClass = e.Weapon.String()
+			}
+		} else {
+			dmg.Weapon = 0
+			if e.WeaponString != "" {
+				dmg.WeaponClass = e.WeaponString
+			} else {
+				dmg.WeaponClass = "env"
+			}
+		}
+
 		dmg.HPDmg = e.HealthDamage
 		dmg.HPDmgTaken = e.HealthDamageTaken
 		dmg.ArmorDmg = e.ArmorDamage
 		dmg.ArmourDmgTaken = e.ArmorDamageTaken
 		dmg.HitGroup = int(e.HitGroup)
 
-		round_info.Damages = append(round_info.Damages, dmg)
+		round.Damages = append(round.Damages, dmg)
+
+		if e.Attacker == nil || e.Weapon == nil {
+			log.Printf("PlayerHurt @tick=%d attacker_nil=%t weapon_nil=%t dmg=%d hit=%d",
+				gs.IngameTick(), e.Attacker == nil, e.Weapon == nil, int(e.HealthDamage), e.HitGroup)
+		}
 	})
 }
 
 func player_fired(p demoinfocs.Parser, m *MatchInfo, s *parsingState) {
 	p.RegisterEventHandler(func(e events.WeaponFire) {
+		// Safety net: never let one bad event kill the parse
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("recovered in WeaponFire handler: %v", r)
+			}
+		}()
+
+		gs := p.GameState()
+
+		// Shooter required for your stats
 		if e.Shooter == nil {
 			return
 		}
 
-		round_info := &m.Rounds[s.round-1]
-		gs := p.GameState()
+		// Ignore warmup entirely
+		if gs.IsWarmupPeriod() {
+			return
+		}
+
+		// Validate round index BEFORE indexing
+		if s.round <= 0 || s.round > len(m.Rounds) {
+			return
+		}
+		round := &m.Rounds[s.round-1]
 
 		var f PlayerFired
-
 		f.Tick = gs.IngameTick()
-		f.Secs = int64((p.CurrentTime() - round_info.TimeRoundStart) / time.Second)
-		f.PlayerSteamID = e.Shooter.SteamID64
-		f.PlayerName = e.Shooter.Name
-		f.PlayerTeam = e.Shooter.TeamState.ClanName()
-		f.PlayerSide = int(e.Shooter.Team)
-		f.PlayerPosX = e.Shooter.Position().X
-		f.PlayerPosY = e.Shooter.Position().Y
-		f.PlayerViewX = e.Shooter.ViewDirectionX()
-		f.PlayerViewY = e.Shooter.ViewDirectionY()
-		f.Weapon = int(e.Weapon.Type)
-		f.AmmoInMag = e.Weapon.AmmoInMagazine()
-		f.AmmoInReserve = e.Weapon.AmmoReserve()
+		f.Secs = int64((p.CurrentTime() - round.TimeRoundStart) / time.Second)
 
-		round_info.ShotsFired = append(round_info.ShotsFired, f)
+		sh := e.Shooter
+		f.PlayerSteamID = sh.SteamID64
+
+		f.PlayerName = sh.Name
+
+		f.PlayerSide = int(sh.Team)
+
+		spos := sh.Position()
+		f.PlayerPosX = spos.X
+		f.PlayerPosY = spos.Y
+		f.PlayerViewX = sh.ViewDirectionX()
+		f.PlayerViewY = sh.ViewDirectionY()
+
+		var wType int
+		var ammoMag, ammoRes int
+		if e.Weapon != nil {
+			wType = int(e.Weapon.Type)
+			ammoMag = e.Weapon.AmmoInMagazine()
+			ammoRes = e.Weapon.AmmoReserve()
+		} else if aw := sh.ActiveWeapon(); aw != nil {
+			wType = int(aw.Type)
+			ammoMag = aw.AmmoInMagazine()
+			ammoRes = aw.AmmoReserve()
+		} else {
+			// Unknown / env / timing race
+			wType = 0
+			ammoMag = 0
+			ammoRes = 0
+			log.Printf("WeaponFire @tick=%d shooter=%s(%d) with nil weapon and no active weapon",
+				gs.IngameTick(), sh.Name, sh.SteamID64)
+		}
+		f.Weapon = wType
+		f.AmmoInMag = ammoMag
+		f.AmmoInReserve = ammoRes
+
+		round.ShotsFired = append(round.ShotsFired, f)
 	})
 }

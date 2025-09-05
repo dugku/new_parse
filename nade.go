@@ -107,6 +107,16 @@ func nades(p demoinfocs.Parser, m *MatchInfo, s *parsingState) {
 			return
 		}
 
+		if e.Base().Thrower == nil {
+			//log.Printf("InfernoStartBurn with nil thrower @tick=%d; skipping", p.GameState().IngameTick())
+			return
+		}
+
+		if e.Base().Grenade == nil {
+			//log.Printf("Grenade is Nil @tick=%d, type=%s", p.GameState().IngameTick(), e.Base().GrenadeType)
+			return
+		}
+
 		gs := p.GameState()
 		ri := &m.Rounds[s.round-1]
 
